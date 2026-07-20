@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -5,11 +6,22 @@ from app.api.api import api_router
 from app.core.config import settings
 from app.core.database import engine
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        with engine.begin() as conn:
+            if conn.dialect.name == "postgresql":
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+    except Exception:
+        pass
+    yield
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url=f"{settings.API_V1_STR}/docs",
     redoc_url=f"{settings.API_V1_STR}/redoc",
+    lifespan=lifespan,
 )
 
 # CORS Configuration
@@ -37,16 +49,6 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
-
-# Startup database initialization and vector extension check
-@app.on_event("startup")
-def on_startup():
-    try:
-        with engine.begin() as conn:
-            if conn.dialect.name == "postgresql":
-                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-    except Exception:
-        pass
 
 # Root Endpoint
 @app.get("/")

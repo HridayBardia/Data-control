@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import { 
   Search, 
   Database, 
@@ -13,14 +13,9 @@ import {
   FileText, 
   Mail, 
   CheckCircle, 
-  AlertCircle, 
   Network,
-  Users, 
   Key, 
-  Settings, 
-  HelpCircle,
   Link2,
-  Trash2,
   Lock,
   Layers,
   ArrowRight
@@ -43,8 +38,33 @@ interface AuditEntry {
   user: string;
   prevHash: string;
   currentHash: string;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
 }
+
+// Cryptographic hashing simulator
+const computeHash = (data: string): string => {
+  let hash = 0;
+  for (let i = 0; i < data.length; i++) {
+    const char = data.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(16).padStart(8, '0') + "f3e970cb48db92";
+};
+
+const createAuditEntry = (id: string, action: string, prevHash: string, payload: Record<string, unknown>): AuditEntry => {
+  const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  const currentHash = computeHash(id + action + prevHash + JSON.stringify(payload));
+  return {
+    id,
+    action,
+    timestamp,
+    user: "admin@atlascorp.com",
+    prevHash,
+    currentHash,
+    payload
+  };
+};
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<"search" | "connectors" | "ingest" | "security">("search");
@@ -109,45 +129,22 @@ export default function Dashboard() {
   ]);
 
   // Audit Logs State
-  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
-
-  // Cryptographic hashing simulator
-  const computeHash = (data: string): string => {
-    let hash = 0;
-    for (let i = 0; i < data.length; i++) {
-      const char = data.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32bit integer
-    }
-    return Math.abs(hash).toString(16).padStart(8, '0') + "f3e970cb48db92";
-  };
+  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>(() => {
+    const e1 = createAuditEntry("1", "SYSTEM_BOOTSTRAP", "genesis_salt_project_atlas_2026", { engine: "Atlas Ingestion Engine", status: "HEALTHY" });
+    const e2 = createAuditEntry("2", "CONNECTOR_INITIALIZED", e1.currentHash, { id: "slack", scope: "read_channels" });
+    const e3 = createAuditEntry("3", "CONNECTOR_INITIALIZED", e2.currentHash, { id: "gworkspace", scope: "read_drive" });
+    return [e1, e2, e3];
+  });
 
   // Add an audit log entry
-  const addAuditLog = (action: string, payload: Record<string, any>) => {
-    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  const addAuditLog = useCallback((action: string, payload: Record<string, unknown>) => {
     setAuditLogs(prev => {
       const lastEntry = prev[prev.length - 1];
       const prevHash = lastEntry ? lastEntry.currentHash : "genesis_salt_project_atlas_2026";
       const id = (prev.length + 1).toString();
-      const currentHash = computeHash(id + action + prevHash + JSON.stringify(payload));
-      
-      return [...prev, {
-        id,
-        action,
-        timestamp,
-        user: "admin@atlascorp.com",
-        prevHash,
-        currentHash,
-        payload
-      }];
+      const entry = createAuditEntry(id, action, prevHash, payload);
+      return [...prev, entry];
     });
-  };
-
-  // Run initial log seed
-  useEffect(() => {
-    addAuditLog("SYSTEM_BOOTSTRAP", { engine: "Atlas Ingestion Engine", status: "HEALTHY" });
-    addAuditLog("CONNECTOR_INITIALIZED", { id: "slack", scope: "read_channels" });
-    addAuditLog("CONNECTOR_INITIALIZED", { id: "gworkspace", scope: "read_drive" });
   }, []);
 
   // Handle Search Trigger
