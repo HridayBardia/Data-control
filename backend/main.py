@@ -55,6 +55,21 @@ async def add_security_headers(request: Request, call_next):
 def read_root():
     return {"message": "Welcome to Project Atlas API Gateway", "version": "1.0.0"}
 
+# Health and Observability Endpoints
+from app.core.telemetry import telemetry
+
+@app.get("/health/live", tags=["observability"])
+def liveness():
+    return telemetry.liveness_probe()
+
+@app.get("/health/ready", tags=["observability"])
+def readiness():
+    return telemetry.readiness_probe()
+
+@app.get("/metrics", tags=["observability"])
+def get_metrics():
+    return Response(content=telemetry.get_metrics_prometheus_format(), media_type="text/plain")
+
 # Include Master Router
 app.include_router(api_router, prefix=settings.API_V1_STR)
 

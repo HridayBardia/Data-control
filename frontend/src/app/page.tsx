@@ -1,24 +1,22 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState } from "react";
 import { 
   Search, 
-  Database, 
   Shield, 
   Terminal, 
-  RefreshCw, 
   Sliders, 
   Plus, 
   Globe, 
   FileText, 
   Mail, 
-  CheckCircle, 
   Network,
-  Key, 
   Link2,
-  Lock,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Bot,
+  Sparkles,
+  Activity
 } from "lucide-react";
 
 // Types
@@ -41,13 +39,20 @@ interface AuditEntry {
   payload: Record<string, unknown>;
 }
 
+interface Citation {
+  id: number;
+  title: string;
+  entity_type: string;
+  score: number;
+}
+
 // Cryptographic hashing simulator
 const computeHash = (data: string): string => {
   let hash = 0;
   for (let i = 0; i < data.length; i++) {
     const char = data.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+    hash = hash & hash;
   }
   return Math.abs(hash).toString(16).padStart(8, '0') + "f3e970cb48db92";
 };
@@ -67,8 +72,9 @@ const createAuditEntry = (id: string, action: string, prevHash: string, payload:
 };
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<"search" | "connectors" | "ingest" | "security">("search");
-  
+  const [activeTab, setActiveTab] = useState<"search" | "rag" | "connectors" | "ingest" | "security" | "analytics">("search");
+  const [activeModel, setActiveModel] = useState("OpenAI gpt-4o");
+
   // Knowledge Assets State
   const [assets, setAssets] = useState<KnowledgeAsset[]>([
     {
@@ -76,7 +82,7 @@ export default function Dashboard() {
       title: "Project Atlas Architecture Overview",
       entityType: "DOCUMENT",
       content: "Project Atlas is an AI-native Enterprise Intelligence Platform. It connects via APIs to Slack, Microsoft 365, Jira, and Salesforce, building a semantic graph. Security is enforced using Zero Trust architecture and Row Level Security in PostgreSQL.",
-      metadata: { author: "CTO Office", source: "Confluence" },
+      metadata: { author: "CTO Office", source: "Confluence", classification: "CONFIDENTIAL" },
       chunks: [
         "Project Atlas is an AI-native Enterprise Intelligence Platform.",
         "It connects via APIs to Slack, Microsoft 365, Jira, and Salesforce, building a semantic graph.",
@@ -88,7 +94,7 @@ export default function Dashboard() {
       title: "Vendor Agreement - OpenAI Inc",
       entityType: "CONTRACT",
       content: "This agreement governs the API usage, data privacy terms, and zero-data retention policies. All enterprise data sent to models is isolated to private subnets. SLA requires 99.99% uptime.",
-      metadata: { department: "Legal", status: "Executed" },
+      metadata: { department: "Legal", status: "Executed", classification: "RESTRICTED" },
       chunks: [
         "This agreement governs the API usage, data privacy terms, and zero-data retention policies.",
         "All enterprise data sent to models is isolated to private subnets. SLA requires 99.99% uptime."
@@ -99,7 +105,7 @@ export default function Dashboard() {
       title: "Weekly Sync Notes - Engineering",
       entityType: "MEETING",
       content: "Discussed migrating vectors from pgvector to dedicated index if search count exceeds 10M records. Implemented cryptographic audit chains on database write operations to verify data integrity.",
-      metadata: { project: "Atlas Engine", date: "2026-07-08" },
+      metadata: { project: "Atlas Engine", date: "2026-07-08", classification: "INTERNAL" },
       chunks: [
         "Discussed migrating vectors from pgvector to dedicated index if search count exceeds 10M records.",
         "Implemented cryptographic audit chains on database write operations to verify data integrity."
@@ -107,20 +113,30 @@ export default function Dashboard() {
     }
   ]);
 
-  // Search Query
+  // Search Query & Hybrid Settings
   const [searchQuery, setSearchQuery] = useState("");
+  const [vectorWeight, setVectorWeight] = useState(0.5);
   const [searchResults, setSearchResults] = useState<{ asset: KnowledgeAsset; chunk: string; score: number }[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+
+  // RAG Chat State
+  const [chatQuery, setChatQuery] = useState("");
+  const [chatHistory, setChatHistory] = useState<{ sender: "user" | "bot"; text: string; citations?: Citation[] }[]>([
+    {
+      sender: "bot",
+      text: "Hello! I am your Atlas AI Assistant. Ask me anything about your enterprise knowledge, documents, or compliance policies.",
+      citations: []
+    }
+  ]);
+  const [isStreaming, setIsStreaming] = useState(false);
 
   // Ingestion form state
   const [ingestTitle, setIngestTitle] = useState("");
   const [ingestType, setIngestType] = useState("DOCUMENT");
   const [ingestContent, setIngestContent] = useState("");
-  const [ingestAuthor, setIngestAuthor] = useState("");
   const [ingestStatus, setIngestStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
 
-  // Connector States
-  const [connectors, setConnectors] = useState([
+  // Connectors
+  const [connectors] = useState([
     { id: "slack", name: "Slack Integration", icon: Mail, type: "Messaging", status: "Connected", items: "12,430 items", lastSynced: "5 mins ago" },
     { id: "gworkspace", name: "Google Workspace", icon: Globe, type: "Files/Mail", status: "Connected", items: "48,901 items", lastSynced: "12 mins ago" },
     { id: "jira", name: "Jira Cloud", icon: Layers, type: "Tasks/Tickets", status: "Connected", items: "4,320 items", lastSynced: "1 hour ago" },
@@ -129,23 +145,12 @@ export default function Dashboard() {
   ]);
 
   // Audit Logs State
-  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>(() => {
+  const [auditLogs] = useState<AuditEntry[]>(() => {
     const e1 = createAuditEntry("1", "SYSTEM_BOOTSTRAP", "genesis_salt_project_atlas_2026", { engine: "Atlas Ingestion Engine", status: "HEALTHY" });
     const e2 = createAuditEntry("2", "CONNECTOR_INITIALIZED", e1.currentHash, { id: "slack", scope: "read_channels" });
     const e3 = createAuditEntry("3", "CONNECTOR_INITIALIZED", e2.currentHash, { id: "gworkspace", scope: "read_drive" });
     return [e1, e2, e3];
   });
-
-  // Add an audit log entry
-  const addAuditLog = useCallback((action: string, payload: Record<string, unknown>) => {
-    setAuditLogs(prev => {
-      const lastEntry = prev[prev.length - 1];
-      const prevHash = lastEntry ? lastEntry.currentHash : "genesis_salt_project_atlas_2026";
-      const id = (prev.length + 1).toString();
-      const entry = createAuditEntry(id, action, prevHash, payload);
-      return [...prev, entry];
-    });
-  }, []);
 
   // Handle Search Trigger
   const handleSearch = (e?: React.FormEvent) => {
@@ -155,664 +160,444 @@ export default function Dashboard() {
       return;
     }
 
-    setIsSearching(true);
-    // Simulate API query latency
-    setTimeout(() => {
-      const results: { asset: KnowledgeAsset; chunk: string; score: number }[] = [];
-      const queryWords = searchQuery.toLowerCase().split(/\s+/);
-      
-      assets.forEach(asset => {
-        asset.chunks.forEach(chunk => {
-          let matches = 0;
-          queryWords.forEach(word => {
-            if (chunk.toLowerCase().includes(word) || asset.title.toLowerCase().includes(word)) {
-              matches += 1;
-            }
-          });
+    const results: { asset: KnowledgeAsset; chunk: string; score: number }[] = [];
+    const queryTerms = searchQuery.toLowerCase().split(" ");
 
-          if (matches > 0 || queryWords.some(w => w.length > 3 && chunk.toLowerCase().includes(w.substring(0, 4)))) {
-            // Generate semantic score based on matches
-            const score = 0.5 + (matches / (queryWords.length + 3)) * 0.45 + (Math.random() * 0.05);
-            results.push({
-              asset,
-              chunk,
-              score: Math.min(score, 0.98)
-            });
-          }
+    assets.forEach(asset => {
+      asset.chunks.forEach(chunk => {
+        let matches = 0;
+        queryTerms.forEach(term => {
+          if (chunk.toLowerCase().includes(term)) matches++;
         });
-      });
 
-      // Sort by score
-      results.sort((a, b) => b.score - a.score);
-      setSearchResults(results);
-      setIsSearching(false);
-      
-      addAuditLog("SEMANTIC_SEARCH_QUERY", { query: searchQuery, resultsCount: results.length });
-    }, 4500);
+        if (matches > 0) {
+          const rawScore = (matches / queryTerms.length) * 0.7 + (vectorWeight * 0.3);
+          results.push({
+            asset,
+            chunk,
+            score: Math.min(0.99, Math.max(0.45, rawScore))
+          });
+        }
+      });
+    });
+
+    results.sort((a, b) => b.score - a.score);
+    setSearchResults(results);
   };
 
-  // Handle Ingest Trigger
-  const handleIngest = (e: React.FormEvent) => {
+  // Handle RAG Chat
+  const handleChat = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ingestTitle.trim() || !ingestContent.trim()) return;
+    if (!chatQuery.trim() || isStreaming) return;
 
-    setIngestStatus("loading");
+    const userText = chatQuery;
+    setChatQuery("");
+    setChatHistory(prev => [...prev, { sender: "user", text: userText }]);
+    setIsStreaming(true);
 
     setTimeout(() => {
-      // Create asset
-      const sentences = ingestContent.split(/[.!?]+/).map(s => s.trim()).filter(Boolean);
+      setChatHistory(prev => [
+        ...prev,
+        {
+          sender: "bot",
+          text: `Based on your enterprise Knowledge Graph, ${userText} aligns with the Zero Trust security architecture and row-level access controls documented in Project Atlas [1].`,
+          citations: [
+            { id: 1, title: "Project Atlas Architecture Overview", entity_type: "DOCUMENT", score: 0.94 }
+          ]
+        }
+      ]);
+      setIsStreaming(false);
+    }, 800);
+  };
+
+  // Handle Document Ingestion
+  const handleIngest = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ingestTitle || !ingestContent) return;
+
+    setIngestStatus("loading");
+    setTimeout(() => {
+      const chunks = ingestContent.split(".").filter(c => c.trim().length > 0).map(c => c.trim() + ".");
       const newAsset: KnowledgeAsset = {
         id: (assets.length + 1).toString(),
         title: ingestTitle,
         entityType: ingestType,
         content: ingestContent,
-        metadata: { author: ingestAuthor || "System Agent", date: new Date().toISOString().split('T')[0] },
-        chunks: sentences.length > 0 ? sentences : [ingestContent]
+        metadata: { author: "Current Admin", source: "Manual Ingestion" },
+        chunks: chunks.length > 0 ? chunks : [ingestContent]
       };
 
       setAssets(prev => [newAsset, ...prev]);
       setIngestStatus("success");
-      
-      addAuditLog("RECORD_INGESTED", { 
-        asset_id: newAsset.id, 
-        title: ingestTitle, 
-        entity_type: ingestType, 
-        chunks_count: newAsset.chunks.length 
-      });
-
-      // Reset form
       setIngestTitle("");
       setIngestContent("");
-      setIngestAuthor("");
-
-      setTimeout(() => setIngestStatus("idle"), 3000);
-    }, 1500);
-  };
-
-  // Toggle integration connector
-  const toggleConnector = (connectorId: string) => {
-    setConnectors(prev => prev.map(conn => {
-      if (conn.id === connectorId) {
-        const isConnected = conn.status === "Connected";
-        const newStatus = isConnected ? "Disconnected" : "Connected";
-        
-        // Log action
-        addAuditLog(isConnected ? "CONNECTOR_DISCONNECTED" : "CONNECTOR_CONNECTED", {
-          connector_id: connectorId,
-          name: conn.name
-        });
-
-        return {
-          ...conn,
-          status: newStatus,
-          items: newStatus === "Connected" ? "Pending Initial Sync..." : "0 items",
-          lastSynced: newStatus === "Connected" ? "Just now" : "Never"
-        };
-      }
-      return conn;
-    }));
+    }, 600);
   };
 
   return (
-    <div className="flex min-h-screen bg-zinc-950 text-zinc-50 font-sans antialiased selection:bg-purple-900/30 selection:text-purple-200">
-      
-      {/* 1. Sidebar Nav */}
-      <aside className="w-64 border-r border-zinc-900 bg-zinc-950 flex flex-col justify-between shrink-0">
-        <div>
-          {/* Platform Header */}
-          <div className="h-16 px-6 border-b border-zinc-900 flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-white flex items-center justify-center text-zinc-950 font-extrabold text-lg shadow-[0_0_20px_rgba(255,255,255,0.15)]">
-              A
-            </div>
-            <div>
-              <span className="font-display font-bold tracking-tight text-white">Project Atlas</span>
-              <div className="text-[10px] text-zinc-500 font-mono tracking-widest uppercase">Intel Layer</div>
-            </div>
+    <div className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+      {/* Header Bar */}
+      <header className="border-b border-zinc-800/80 bg-zinc-950/60 backdrop-blur-xl sticky top-0 z-50 px-6 py-3.5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+            <Network className="h-5 w-5 text-white" />
           </div>
-
-          {/* Org Selector Mock */}
-          <div className="p-4 border-b border-zinc-900">
-            <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-900/40 border border-zinc-800/60">
-              <div className="flex items-center gap-2">
-                <div className="h-5 w-5 rounded bg-purple-500 flex items-center justify-center text-[10px] font-bold text-white">SL</div>
-                <div className="text-xs font-semibold text-zinc-300">search-labs</div>
-              </div>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono">Tenant</span>
-            </div>
-          </div>
-
-          {/* Navigation Links */}
-          <nav className="p-4 space-y-1.5">
-            <button
-              onClick={() => setActiveTab("search")}
-              className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
-                activeTab === "search"
-                  ? "bg-zinc-900 text-white border border-zinc-800"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40 border border-transparent"
-              }`}
-            >
-              <Search className="h-4 w-4" />
-              <span>Universal Search</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("connectors")}
-              className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
-                activeTab === "connectors"
-                  ? "bg-zinc-900 text-white border border-zinc-800"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40 border border-transparent"
-              }`}
-            >
-              <Link2 className="h-4 w-4" />
-              <span>Connected Systems</span>
-              {connectors.filter(c => c.status === "Connected").length > 0 && (
-                <span className="ml-auto text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.2 rounded-full font-semibold">
-                  {connectors.filter(c => c.status === "Connected").length}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab("ingest")}
-              className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
-                activeTab === "ingest"
-                  ? "bg-zinc-900 text-white border border-zinc-800"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40 border border-transparent"
-              }`}
-            >
-              <Plus className="h-4 w-4" />
-              <span>Ingestion Hub</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("security")}
-              className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
-                activeTab === "security"
-                  ? "bg-zinc-900 text-white border border-zinc-800"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40 border border-transparent"
-              }`}
-            >
-              <Shield className="h-4 w-4" />
-              <span>Security & Audits</span>
-              <span className="ml-auto text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/20 px-1.5 py-0.2 rounded-full font-semibold">
-                Secure
-              </span>
-            </button>
-          </nav>
-        </div>
-
-        {/* User Block & Bottom Navigation */}
-        <div className="p-4 border-t border-zinc-900">
-          <div className="space-y-4">
-            <div className="rounded-lg bg-zinc-900/30 border border-zinc-900 p-3 space-y-2">
-              <div className="flex items-center gap-1.5 text-zinc-400 text-xs font-mono">
-                <Lock className="h-3 w-3 text-emerald-400" />
-                <span>Zero Trust Enforcement</span>
-              </div>
-              <div className="text-[10px] text-zinc-500 leading-normal">
-                RLS is isolating queries by organization ID `search-labs`.
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-full bg-zinc-800 flex items-center justify-center text-sm font-semibold border border-zinc-700 text-purple-300">
-                AA
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-white">Atlas Admin</div>
-                <div className="text-[10px] text-zinc-500 font-mono">admin@atlascorp.com</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* 2. Main Content Frame */}
-      <div className="flex-1 flex flex-col min-w-0">
-        
-        {/* Top Header */}
-        <header className="h-16 border-b border-zinc-900 px-8 flex items-center justify-between bg-zinc-950/70 backdrop-blur-md sticky top-0 z-40">
-          <div className="flex items-center gap-4">
+          <div>
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="text-xs text-zinc-400 font-medium">Database Node Connected</span>
+              <span className="font-bold tracking-tight text-lg bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
+                ATLAS
+              </span>
+              <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                Enterprise AI
+              </span>
             </div>
-            <span className="text-zinc-800">|</span>
-            <div className="text-xs text-zinc-500 font-mono">
-              IP Isolation Active
-            </div>
+            <p className="text-[11px] text-zinc-500 font-medium">Zero Trust AI Knowledge Engine</p>
           </div>
+        </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 bg-zinc-900/60 border border-zinc-800/80 rounded-md px-2.5 py-1 text-[11px] font-mono text-zinc-400">
-              <Key className="h-3.5 w-3.5 text-zinc-500" />
-              <span>ROLE: ADMIN</span>
-            </div>
-            <button className="h-8 px-3 rounded-md bg-zinc-900 border border-zinc-800 text-xs text-zinc-300 hover:text-white transition-colors">
-              API Docs
-            </button>
+        {/* Navigation Tabs */}
+        <nav className="flex items-center gap-1 bg-zinc-900/80 p-1 rounded-xl border border-zinc-800">
+          {[
+            { id: "search", label: "Hybrid Search", icon: Search },
+            { id: "rag", label: "AI RAG Chat", icon: Bot },
+            { id: "connectors", label: "Connectors", icon: Link2 },
+            { id: "ingest", label: "Ingest Data", icon: Plus },
+            { id: "security", label: "Audit Ledger", icon: Shield },
+            { id: "analytics", label: "Observability", icon: Activity }
+          ].map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as "search" | "rag" | "connectors" | "ingest" | "security" | "analytics")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  isActive
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* User Profile */}
+        <div className="flex items-center gap-3">
+          <div className="text-right hidden sm:block">
+            <p className="text-xs font-medium text-zinc-200">Admin User</p>
+            <p className="text-[10px] text-zinc-500">Atlas Corp • Super Admin</p>
           </div>
-        </header>
+          <div className="h-8 w-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xs font-bold text-indigo-400">
+            AC
+          </div>
+        </div>
+      </header>
 
-        {/* Tab Canvas Area */}
-        <main className="flex-1 p-8 overflow-y-auto max-w-6xl w-full mx-auto">
-          
-          {/* SEARCH TAB */}
-          {activeTab === "search" && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="space-y-1.5">
-                <h1 className="text-2xl font-bold font-display text-white tracking-tight">Semantic Hybrid Search</h1>
-                <p className="text-sm text-zinc-400">
-                  Search across your entire enterprise knowledge graph. Neural embeddings will resolve meaning, not just keywords.
-                </p>
-              </div>
-
-              {/* Form Input Container */}
-              <div className="p-1 rounded-2xl bg-zinc-900/60 border border-zinc-800/80 backdrop-blur-xl">
-                <form onSubmit={handleSearch} className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-500" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Ask Atlas about agreements, weekly engineering logs, or technical specs..."
-                      className="w-full bg-transparent border-0 pl-12 pr-4 py-3.5 text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-0"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={isSearching}
-                    className="px-5 rounded-xl bg-white text-zinc-950 font-semibold text-xs hover:bg-zinc-200 transition-colors flex items-center gap-2 shrink-0 disabled:opacity-50"
-                  >
-                    {isSearching ? (
-                      <>
-                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                        <span>Vectorizing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Execute Search</span>
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </>
-                    )}
-                  </button>
-                </form>
-              </div>
-
-              {/* Processing Loader */}
-              {isSearching && (
-                <div className="p-8 rounded-xl border border-dashed border-zinc-800 flex flex-col items-center justify-center gap-4 bg-zinc-950/20">
-                  <div className="relative h-12 w-12 flex items-center justify-center">
-                    <div className="absolute inset-0 rounded-full border-2 border-purple-500/20 animate-ping"></div>
-                    <Database className="h-6 w-6 text-purple-400 animate-pulse" />
-                  </div>
-                  <div className="space-y-1.5 text-center">
-                    <p className="text-xs font-semibold text-zinc-200 font-mono">Running RAG Cosine Comparison</p>
-                    <p className="text-[10px] text-zinc-500 max-w-sm">
-                      Converting query string to vector(1536), applying pgvector `vector &lt;=&gt; :query` similarity matrices.
-                    </p>
-                  </div>
+      {/* Main Workspace */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
+        
+        {/* HYBRID SEARCH TAB */}
+        {activeTab === "search" && (
+          <div className="space-y-6 animate-fadeIn">
+            {/* Search Input Bar */}
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 backdrop-blur-md shadow-2xl">
+              <form onSubmit={handleSearch} className="flex gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-4 top-3.5 h-5 w-5 text-zinc-500" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="Search enterprise knowledge base (e.g. RLS, Zero Trust, OpenAI SLA)..."
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-12 pr-4 py-3 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                  />
                 </div>
-              )}
+                <button
+                  type="submit"
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-6 py-3 rounded-xl text-sm transition flex items-center gap-2 shadow-lg shadow-indigo-600/20"
+                >
+                  Search
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </form>
 
-              {/* Empty / Result State */}
-              {!isSearching && searchResults.length === 0 && (
-                <div className="grid md:grid-cols-3 gap-4 pt-4">
-                  <div className="p-5 rounded-xl border border-zinc-900 bg-zinc-900/10 space-y-2">
-                    <div className="h-8 w-8 rounded bg-zinc-900 flex items-center justify-center text-purple-400">
-                      <Lock className="h-4 w-4" />
-                    </div>
-                    <h3 className="text-xs font-bold text-zinc-200">Tenant Scoping</h3>
-                    <p className="text-[11px] text-zinc-500 leading-normal">
-                      Security context guarantees zero results leakage from other organizations. RLS strictly filters by org_id.
-                    </p>
-                  </div>
-                  <div className="p-5 rounded-xl border border-zinc-900 bg-zinc-900/10 space-y-2">
-                    <div className="h-8 w-8 rounded bg-zinc-900 flex items-center justify-center text-blue-400">
-                      <Network className="h-4 w-4" />
-                    </div>
-                    <h3 className="text-xs font-bold text-zinc-200">Knowledge Graph Linked</h3>
-                    <p className="text-[11px] text-zinc-500 leading-normal">
-                      Every document maps back to creators, tasks, and slack messages, resolving conceptual connections.
-                    </p>
-                  </div>
-                  <div className="p-5 rounded-xl border border-zinc-900 bg-zinc-900/10 space-y-2">
-                    <div className="h-8 w-8 rounded bg-zinc-900 flex items-center justify-center text-amber-400">
-                      <Sliders className="h-4 w-4" />
-                    </div>
-                    <h3 className="text-xs font-bold text-zinc-200">Hybrid Ranking</h3>
-                    <p className="text-[11px] text-zinc-500 leading-normal">
-                      Combines BM25 lexical keyword frequencies with dense semantic vector matches to provide optimal search results.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Search Results Render */}
-              {!isSearching && searchResults.length > 0 && (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center px-1">
-                    <span className="text-xs text-zinc-400 font-mono">Found {searchResults.length} relevant vector chunks</span>
-                    <span className="text-[10px] text-zinc-500">Query duration: 4.5s (Cached embedding)</span>
-                  </div>
-
-                  <div className="space-y-3.5">
-                    {searchResults.map((result, idx) => (
-                      <div 
-                        key={idx} 
-                        className="p-5 rounded-xl border border-zinc-900 bg-zinc-900/20 hover:border-zinc-800 transition-all space-y-3.5"
-                      >
-                        {/* Header Details */}
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono uppercase text-[10px]">
-                              {result.asset.entityType}
-                            </span>
-                            <h3 className="text-sm font-semibold text-white hover:underline cursor-pointer">
-                              {result.asset.title}
-                            </h3>
-                          </div>
-                          
-                          {/* Similarity Badge */}
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] text-zinc-500 font-mono">Cosine Sim:</span>
-                            <span className={`text-xs font-mono px-2 py-0.5 rounded font-bold ${
-                              result.score > 0.8 
-                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                : "bg-purple-500/10 text-purple-400 border border-purple-500/20"
-                            }`}>
-                              {(result.score * 100).toFixed(1)}%
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Matching Text Block */}
-                        <p className="text-sm text-zinc-300 leading-relaxed pl-3 border-l-2 border-purple-500/40">
-                          {result.chunk}
-                        </p>
-
-                        {/* Footer Metadata */}
-                        <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-1">
-                          <div className="flex items-center gap-3">
-                            <span>Author: {result.asset.metadata.author || result.asset.metadata.department || "System"}</span>
-                            <span>•</span>
-                            <span>Source: {result.asset.metadata.source || "Ingested"}</span>
-                          </div>
-                          <span className="font-mono text-[10px]">Chunk #{result.asset.chunks.indexOf(result.chunk)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* CONNECTORS TAB */}
-          {activeTab === "connectors" && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="space-y-1.5">
-                <h1 className="text-2xl font-bold font-display text-white tracking-tight">Enterprise Integrations</h1>
-                <p className="text-sm text-zinc-400">
-                  Securely link your business endpoints. Atlas runs non-invasive sync jobs utilizing read-only OAuth scopes.
-                </p>
-              </div>
-
-              {/* Grid Layout */}
-              <div className="grid md:grid-cols-2 gap-4">
-                {connectors.map(conn => {
-                  const IconComponent = conn.icon;
-                  const isConnected = conn.status === "Connected";
-                  return (
-                    <div 
-                      key={conn.id} 
-                      className={`p-5 rounded-xl border transition-all flex flex-col justify-between h-44 ${
-                        isConnected 
-                          ? "bg-zinc-900/20 border-zinc-800/80" 
-                          : "bg-zinc-950 border-zinc-900 opacity-60 hover:opacity-80"
-                      }`}
-                    >
-                      <div>
-                        {/* Upper Section */}
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className={`p-2.5 rounded-lg ${
-                              isConnected ? "bg-zinc-900 text-purple-400" : "bg-zinc-900 text-zinc-600"
-                            }`}>
-                              <IconComponent className="h-5 w-5" />
-                            </div>
-                            <div>
-                              <h3 className="text-sm font-semibold text-white">{conn.name}</h3>
-                              <span className="text-[10px] text-zinc-500 uppercase font-mono tracking-wider">{conn.type}</span>
-                            </div>
-                          </div>
-
-                          {/* Status Badge */}
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
-                            isConnected 
-                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
-                              : "bg-zinc-800 text-zinc-500 border-zinc-700"
-                          }`}>
-                            {conn.status}
-                          </span>
-                        </div>
-
-                        {/* Middle Stats */}
-                        {isConnected && (
-                          <div className="flex gap-4 mt-4 text-xs font-mono text-zinc-400">
-                            <div>
-                              <span className="text-zinc-500 text-[10px] block">INDEXED ASSETS</span>
-                              <span className="font-semibold text-zinc-200">{conn.items}</span>
-                            </div>
-                            <div>
-                              <span className="text-zinc-500 text-[10px] block">LAST SYNCHRONIZED</span>
-                              <span className="font-semibold text-zinc-200">{conn.lastSynced}</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Footer Action */}
-                      <div className="flex justify-end pt-4 border-t border-zinc-900/60 mt-auto">
-                        <button
-                          onClick={() => toggleConnector(conn.id)}
-                          className={`text-xs px-3 py-1.5 rounded-md font-semibold transition-colors ${
-                            isConnected
-                              ? "bg-zinc-900/80 hover:bg-red-950/20 hover:text-red-400 border border-zinc-800 text-zinc-300"
-                              : "bg-white text-zinc-950 hover:bg-zinc-200"
-                          }`}
-                        >
-                          {isConnected ? "Revoke Integration" : "Connect Endpoint"}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+              {/* Hybrid Weighting Slider */}
+              <div className="mt-4 flex items-center gap-4 text-xs font-medium text-zinc-400">
+                <Sliders className="h-4 w-4 text-zinc-500" />
+                <span>Hybrid Fusion Weights:</span>
+                <span className="text-zinc-300">BM25 Keyword ({Math.round((1 - vectorWeight) * 100)}%)</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={vectorWeight}
+                  onChange={e => setVectorWeight(parseFloat(e.target.value))}
+                  className="w-32 accent-indigo-500 cursor-pointer"
+                />
+                <span className="text-zinc-300">pgvector Cosine ({Math.round(vectorWeight * 100)}%)</span>
               </div>
             </div>
-          )}
 
-          {/* INGESTION HUB TAB */}
-          {activeTab === "ingest" && (
-            <div className="grid md:grid-cols-3 gap-8 animate-fade-in">
-              {/* Left Column: Form */}
-              <div className="md:col-span-2 space-y-6">
-                <div className="space-y-1.5">
-                  <h1 className="text-2xl font-bold font-display text-white tracking-tight">Direct Asset Ingestion</h1>
-                  <p className="text-sm text-zinc-400 font-sans">
-                    Manually index custom documents, contracts, or credentials straight into your organizations knowledge layer.
-                  </p>
-                </div>
-
-                <form onSubmit={handleIngest} className="space-y-4 rounded-xl border border-zinc-900 bg-zinc-900/10 p-6">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-xs text-zinc-400 font-semibold block">Document Title</label>
-                      <input
-                        type="text"
-                        required
-                        value={ingestTitle}
-                        onChange={(e) => setIngestTitle(e.target.value)}
-                        placeholder="e.g. Server Migration Protocols"
-                        className="w-full bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs text-zinc-400 font-semibold block">Asset Entity Type</label>
-                      <select
-                        value={ingestType}
-                        onChange={(e) => setIngestType(e.target.value)}
-                        className="w-full bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-zinc-700"
-                      >
-                        <option value="DOCUMENT">DOCUMENT</option>
-                        <option value="CONTRACT">CONTRACT</option>
-                        <option value="MEETING">MEETING NOTES</option>
-                        <option value="EMAIL">EMAIL</option>
-                        <option value="TASK">TASK / TICKET</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs text-zinc-400 font-semibold block">Author / Department</label>
-                    <input
-                      type="text"
-                      value={ingestAuthor}
-                      onChange={(e) => setIngestAuthor(e.target.value)}
-                      placeholder="e.g. Infrastructure Team"
-                      className="w-full bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs text-zinc-400 font-semibold block">Raw Text Content</label>
-                    <textarea
-                      required
-                      rows={5}
-                      value={ingestContent}
-                      onChange={(e) => setIngestContent(e.target.value)}
-                      placeholder="Provide raw text. It will be split into chunks and converted into vectors automatically..."
-                      className="w-full bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 font-sans"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2">
-                    <div className="flex items-center gap-2">
-                      {ingestStatus === "loading" && (
-                        <span className="flex items-center gap-1.5 text-xs text-purple-400 font-mono">
-                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                          <span>Splitting and Vectorizing...</span>
-                        </span>
-                      )}
-                      {ingestStatus === "success" && (
-                        <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-mono">
-                          <CheckCircle className="h-3.5 w-3.5" />
-                          <span>Ingestion successful!</span>
-                        </span>
-                      )}
-                    </div>
-                    
-                    <button
-                      type="submit"
-                      disabled={ingestStatus === "loading"}
-                      className="px-5 py-2 rounded-lg bg-white text-zinc-950 font-semibold text-xs hover:bg-zinc-200 transition-colors"
-                    >
-                      Process & Ingest
-                    </button>
-                  </div>
-                </form>
-              </div>
-
-              {/* Right Column: Assets List */}
+            {/* Results Grid */}
+            {searchResults.length > 0 ? (
               <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">In Memory Assets</h3>
-                  <span className="text-[10px] text-zinc-500 font-mono">{assets.length} Ingested</span>
-                </div>
-
-                <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
-                  {assets.map(asset => (
-                    <div key={asset.id} className="p-3.5 rounded-lg border border-zinc-900 bg-zinc-900/20 hover:border-zinc-800 transition-colors">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 font-mono">{asset.entityType}</span>
-                        <span className="text-[9px] text-zinc-500 font-mono">ID: {asset.id}</span>
+                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                  Top RRF Hybrid Results ({searchResults.length})
+                </p>
+                {searchResults.map((res, idx) => (
+                  <div key={idx} className="bg-zinc-900/40 border border-zinc-800/80 rounded-xl p-5 hover:border-zinc-700 transition">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                          {res.asset.entityType}
+                        </span>
+                        <h3 className="text-sm font-semibold text-zinc-100">{res.asset.title}</h3>
                       </div>
-                      <h4 className="text-xs font-semibold text-white truncate">{asset.title}</h4>
-                      <p className="text-[11px] text-zinc-500 line-clamp-2 mt-1 leading-relaxed">
-                        {asset.content}
-                      </p>
-                      <div className="flex justify-between items-center mt-2.5 pt-2 border-t border-zinc-900 text-[9px] text-zinc-500">
-                        <span>Chunks: {asset.chunks.length}</span>
-                        <span>{asset.metadata.author || "System"}</span>
+                      <span className="text-xs font-mono font-semibold text-emerald-400">
+                        Score: {(res.score * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-300 leading-relaxed bg-zinc-950/50 p-3 rounded-lg border border-zinc-800/50 font-mono">
+                      &quot;{res.chunk}&quot;
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : searchQuery ? (
+              <div className="text-center py-12 text-zinc-500 text-sm">
+                No indexed chunks matched your search criteria.
+              </div>
+            ) : null}
+          </div>
+        )}
+
+        {/* AI RAG CHAT TAB */}
+        {activeTab === "rag" && (
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 backdrop-blur-md shadow-2xl space-y-4 flex flex-col h-[650px]">
+            <div className="flex items-center justify-between pb-4 border-b border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-indigo-400" />
+                <h2 className="text-sm font-bold text-white">Enterprise RAG Assistant</h2>
+              </div>
+              <select
+                value={activeModel}
+                onChange={e => setActiveModel(e.target.value)}
+                className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-indigo-500"
+              >
+                <option value="OpenAI gpt-4o">OpenAI gpt-4o</option>
+                <option value="Anthropic Claude 3.5 Sonnet">Anthropic Claude 3.5 Sonnet</option>
+                <option value="Google Gemini 1.5 Pro">Google Gemini 1.5 Pro</option>
+                <option value="Ollama nomic-embed-text (Local)">Ollama Local</option>
+              </select>
+            </div>
+
+            {/* Chat Messages */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+              {chatHistory.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`max-w-xl rounded-2xl px-4 py-3 text-xs leading-relaxed ${
+                      msg.sender === "user"
+                        ? "bg-indigo-600 text-white rounded-br-none"
+                        : "bg-zinc-950 border border-zinc-800 text-zinc-200 rounded-bl-none"
+                    }`}
+                  >
+                    <p>{msg.text}</p>
+
+                    {/* Citations list */}
+                    {msg.citations && msg.citations.length > 0 && (
+                      <div className="mt-3 pt-2 border-t border-zinc-800/80 space-y-1">
+                        <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Citations:</p>
+                        {msg.citations.map((c, i) => (
+                          <div key={i} className="flex items-center justify-between text-[10px] text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded">
+                            <span>[{c.id}] {c.title}</span>
+                            <span className="font-mono text-emerald-400">{Math.round(c.score * 100)}% Match</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Input Form */}
+            <form onSubmit={handleChat} className="flex gap-2 pt-2 border-t border-zinc-800">
+              <input
+                type="text"
+                value={chatQuery}
+                onChange={e => setChatQuery(e.target.value)}
+                placeholder={`Ask ${activeModel}...`}
+                className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+              />
+              <button
+                type="submit"
+                disabled={isStreaming}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2.5 rounded-xl text-xs transition flex items-center gap-1 shadow-md shadow-indigo-600/20"
+              >
+                Send
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* CONNECTORS TAB */}
+        {activeTab === "connectors" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {connectors.map(c => {
+              const Icon = c.icon;
+              return (
+                <div key={c.id} className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between hover:border-zinc-700 transition">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center">
+                        <Icon className="h-5 w-5 text-indigo-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-bold text-white">{c.name}</h3>
+                        <p className="text-[10px] font-mono text-zinc-500">{c.type}</p>
                       </div>
                     </div>
-                  ))}
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                      c.status === "Connected" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-zinc-800 text-zinc-500 border-zinc-700"
+                    }`}>
+                      {c.status}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-zinc-800/60 flex items-center justify-between text-[11px] font-mono text-zinc-400">
+                    <span>{c.items}</span>
+                    <span>Synced {c.lastSynced}</span>
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* INGEST TAB */}
+        {activeTab === "ingest" && (
+          <div className="max-w-2xl mx-auto bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 backdrop-blur-md shadow-2xl space-y-4">
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <Plus className="h-4 w-4 text-indigo-400" />
+              Manual Document Ingestion
+            </h2>
+            <form onSubmit={handleIngest} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-zinc-400 block mb-1">Document Title</label>
+                <input
+                  type="text"
+                  value={ingestTitle}
+                  onChange={e => setIngestTitle(e.target.value)}
+                  placeholder="e.g. Q3 AI Security Audit Report"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
+                />
               </div>
+
+              <div>
+                <label className="text-xs font-semibold text-zinc-400 block mb-1">Entity Type</label>
+                <select
+                  value={ingestType}
+                  onChange={e => setIngestType(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="DOCUMENT">DOCUMENT</option>
+                  <option value="CONTRACT">CONTRACT</option>
+                  <option value="MEETING">MEETING</option>
+                  <option value="TICKET">TICKET</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-zinc-400 block mb-1">Document Body Content</label>
+                <textarea
+                  rows={5}
+                  value={ingestContent}
+                  onChange={e => setIngestContent(e.target.value)}
+                  placeholder="Paste document text here to trigger smart semantic chunking and embedding index generation..."
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={ingestStatus === "loading"}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-3 rounded-xl text-xs transition shadow-lg shadow-indigo-600/20"
+              >
+                {ingestStatus === "loading" ? "Processing Chunks & Embeddings..." : "Ingest & Index Document"}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* AUDIT LEDGER TAB */}
+        {activeTab === "security" && (
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 backdrop-blur-md shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <Shield className="h-4 w-4 text-indigo-400" />
+                Tamper-Proof Cryptographic Audit Ledger
+              </h2>
+              <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                Chain Verified
+              </span>
             </div>
-          )}
 
-          {/* SECURITY & AUDIT TAB */}
-          {activeTab === "security" && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="flex justify-between items-start">
-                <div className="space-y-1.5">
-                  <h1 className="text-2xl font-bold font-display text-white tracking-tight">Security Audit Logs</h1>
-                  <p className="text-sm text-zinc-400">
-                    A cryptographic chain verification ledger logs all data mutations. Modifying records invalidates the hash chain integrity check.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold font-mono">
-                  <CheckCircle className="h-4 w-4" />
-                  <span>CHAIN VERIFIED</span>
-                </div>
-              </div>
-
-              {/* Chain Logs Listing */}
-              <div className="border border-zinc-900 rounded-xl bg-zinc-900/10 overflow-hidden">
-                <div className="grid grid-cols-12 gap-4 px-6 py-3 border-b border-zinc-900 text-xs font-semibold text-zinc-400 font-mono">
-                  <div className="col-span-1">ID</div>
-                  <div className="col-span-3">ACTION EVENT</div>
-                  <div className="col-span-2">TIMESTAMP</div>
-                  <div className="col-span-3">PREVIOUS ROW HASH</div>
-                  <div className="col-span-3">CURRENT ROW HASH</div>
-                </div>
-
-                <div className="divide-y divide-zinc-900 font-mono text-xs">
-                  {auditLogs.map((log) => (
-                    <div key={log.id} className="p-6 hover:bg-zinc-900/10 transition-colors space-y-4">
-                      {/* Grid Header */}
-                      <div className="grid grid-cols-12 gap-4 items-center">
-                        <div className="col-span-1 text-zinc-600 font-bold">{log.id}</div>
-                        <div className="col-span-3 text-white font-semibold flex items-center gap-1.5">
-                          <span className="h-1.5 w-1.5 rounded-full bg-purple-500"></span>
-                          <span>{log.action}</span>
-                        </div>
-                        <div className="col-span-2 text-zinc-500">{log.timestamp}</div>
-                        <div className="col-span-3 text-zinc-600 text-[10px] truncate">{log.prevHash}</div>
-                        <div className="col-span-3 text-emerald-500/90 text-[10px] font-bold truncate flex items-center gap-1">
-                          <Lock className="h-3 w-3 shrink-0" />
-                          <span>{log.currentHash}</span>
-                        </div>
-                      </div>
-
-                      {/* Expandable JSON Payload view */}
-                      <div className="pl-4 border-l border-zinc-800 text-[11px] text-zinc-500 py-1 space-y-1">
-                        <div><span className="text-zinc-600">Actor:</span> {log.user}</div>
-                        <div><span className="text-zinc-600">Payload:</span> {JSON.stringify(log.payload)}</div>
-                      </div>
-                    </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs font-mono">
+                <thead>
+                  <tr className="border-b border-zinc-800 text-zinc-400">
+                    <th className="pb-2 font-semibold">ID</th>
+                    <th className="pb-2 font-semibold">ACTION</th>
+                    <th className="pb-2 font-semibold">TIMESTAMP</th>
+                    <th className="pb-2 font-semibold">PREV HASH</th>
+                    <th className="pb-2 font-semibold">CURRENT HASH</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/50 text-zinc-300">
+                  {auditLogs.map(log => (
+                    <tr key={log.id}>
+                      <td className="py-2.5 font-bold text-zinc-400">#{log.id}</td>
+                      <td className="py-2.5 text-indigo-400 font-semibold">{log.action}</td>
+                      <td className="py-2.5 text-zinc-500">{log.timestamp}</td>
+                      <td className="py-2.5 text-zinc-500 text-[10px]">{log.prevHash.substring(0, 16)}...</td>
+                      <td className="py-2.5 text-emerald-400 text-[10px]">{log.currentHash.substring(0, 16)}...</td>
+                    </tr>
                   ))}
-                </div>
-              </div>
+                </tbody>
+              </table>
             </div>
-          )}
+          </div>
+        )}
 
-        </main>
-      </div>
-
+        {/* OBSERVABILITY TAB */}
+        {activeTab === "analytics" && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 space-y-2">
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-zinc-500">HTTP Requests (Total)</span>
+              <p className="text-2xl font-bold font-mono text-white">142,890</p>
+              <p className="text-[10px] text-emerald-400 font-mono">99.98% Success Rate</p>
+            </div>
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 space-y-2">
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-zinc-500">Average RAG Latency</span>
+              <p className="text-2xl font-bold font-mono text-white">142ms</p>
+              <p className="text-[10px] text-emerald-400 font-mono">pgvector HNSW Optimized</p>
+            </div>
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 space-y-2">
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-zinc-500">Celery Task Queue</span>
+              <p className="text-2xl font-bold font-mono text-white">0 Pending</p>
+              <p className="text-[10px] text-indigo-400 font-mono">Worker Capacity: 100%</p>
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }
