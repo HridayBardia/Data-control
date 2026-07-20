@@ -6,9 +6,7 @@ import {
   Shield, 
   Terminal, 
   Sliders, 
-  Plus, 
   Globe, 
-  FileText, 
   Mail, 
   Network,
   Link2,
@@ -16,7 +14,10 @@ import {
   ArrowRight,
   Bot,
   Sparkles,
-  Activity
+  Activity,
+  GitFork,
+  FileSearch,
+  Lock
 } from "lucide-react";
 
 // Types
@@ -72,11 +73,11 @@ const createAuditEntry = (id: string, action: string, prevHash: string, payload:
 };
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<"search" | "rag" | "connectors" | "ingest" | "security" | "analytics">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "rag" | "graph" | "governance" | "connectors" | "policy" | "security" | "analytics">("search");
   const [activeModel, setActiveModel] = useState("OpenAI gpt-4o");
 
   // Knowledge Assets State
-  const [assets, setAssets] = useState<KnowledgeAsset[]>([
+  const [assets] = useState<KnowledgeAsset[]>([
     {
       id: "1",
       title: "Project Atlas Architecture Overview",
@@ -129,19 +130,16 @@ export default function Dashboard() {
   ]);
   const [isStreaming, setIsStreaming] = useState(false);
 
-  // Ingestion form state
-  const [ingestTitle, setIngestTitle] = useState("");
-  const [ingestType, setIngestType] = useState("DOCUMENT");
-  const [ingestContent, setIngestContent] = useState("");
-  const [ingestStatus, setIngestStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  // Policy simulator state
+  const [simDept, setSimDept] = useState("Finance");
+  const [simResult, setSimResult] = useState<string | null>(null);
 
   // Connectors
   const [connectors] = useState([
     { id: "slack", name: "Slack Integration", icon: Mail, type: "Messaging", status: "Connected", items: "12,430 items", lastSynced: "5 mins ago" },
     { id: "gworkspace", name: "Google Workspace", icon: Globe, type: "Files/Mail", status: "Connected", items: "48,901 items", lastSynced: "12 mins ago" },
     { id: "jira", name: "Jira Cloud", icon: Layers, type: "Tasks/Tickets", status: "Connected", items: "4,320 items", lastSynced: "1 hour ago" },
-    { id: "github", name: "GitHub Enterprise", icon: Terminal, type: "Codebase", status: "Disconnected", items: "0 items", lastSynced: "Never" },
-    { id: "notion", name: "Notion Enterprise", icon: FileText, type: "Knowledge", status: "Disconnected", items: "0 items", lastSynced: "Never" }
+    { id: "github", name: "GitHub Enterprise", icon: Terminal, type: "Codebase", status: "Disconnected", items: "0 items", lastSynced: "Never" }
   ]);
 
   // Audit Logs State
@@ -210,28 +208,13 @@ export default function Dashboard() {
     }, 800);
   };
 
-  // Handle Document Ingestion
-  const handleIngest = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!ingestTitle || !ingestContent) return;
-
-    setIngestStatus("loading");
-    setTimeout(() => {
-      const chunks = ingestContent.split(".").filter(c => c.trim().length > 0).map(c => c.trim() + ".");
-      const newAsset: KnowledgeAsset = {
-        id: (assets.length + 1).toString(),
-        title: ingestTitle,
-        entityType: ingestType,
-        content: ingestContent,
-        metadata: { author: "Current Admin", source: "Manual Ingestion" },
-        chunks: chunks.length > 0 ? chunks : [ingestContent]
-      };
-
-      setAssets(prev => [newAsset, ...prev]);
-      setIngestStatus("success");
-      setIngestTitle("");
-      setIngestContent("");
-    }, 600);
+  // Run Policy Simulator
+  const handleSimulatePolicy = () => {
+    if (simDept === "Finance") {
+      setSimResult("PASSED: Access Granted under 'Finance Dept Only' policy rule.");
+    } else {
+      setSimResult(`DENIED: User department '${simDept}' violates 'Finance Dept Only' access rule.`);
+    }
   };
 
   return (
@@ -248,30 +231,32 @@ export default function Dashboard() {
                 ATLAS
               </span>
               <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                Enterprise AI
+                AI Data Control Platform
               </span>
             </div>
-            <p className="text-[11px] text-zinc-500 font-medium">Zero Trust AI Knowledge Engine</p>
+            <p className="text-[11px] text-zinc-500 font-medium">Universal Data Governance Engine</p>
           </div>
         </div>
 
         {/* Navigation Tabs */}
-        <nav className="flex items-center gap-1 bg-zinc-900/80 p-1 rounded-xl border border-zinc-800">
+        <nav className="flex items-center gap-1 bg-zinc-900/80 p-1 rounded-xl border border-zinc-800 overflow-x-auto">
           {[
             { id: "search", label: "Hybrid Search", icon: Search },
-            { id: "rag", label: "AI RAG Chat", icon: Bot },
+            { id: "rag", label: "AI Chat", icon: Bot },
+            { id: "graph", label: "Knowledge Graph", icon: GitFork },
+            { id: "governance", label: "Governance & PII", icon: FileSearch },
             { id: "connectors", label: "Connectors", icon: Link2 },
-            { id: "ingest", label: "Ingest Data", icon: Plus },
+            { id: "policy", label: "Policy Engine", icon: Lock },
             { id: "security", label: "Audit Ledger", icon: Shield },
-            { id: "analytics", label: "Observability", icon: Activity }
+            { id: "analytics", label: "Telemetry", icon: Activity }
           ].map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as "search" | "rag" | "connectors" | "ingest" | "security" | "analytics")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                onClick={() => setActiveTab(tab.id as "search" | "rag" | "graph" | "governance" | "connectors" | "policy" | "security" | "analytics")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                   isActive
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
                     : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
@@ -381,7 +366,7 @@ export default function Dashboard() {
             <div className="flex items-center justify-between pb-4 border-b border-zinc-800">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-indigo-400" />
-                <h2 className="text-sm font-bold text-white">Enterprise RAG Assistant</h2>
+                <h2 className="text-sm font-bold text-white">Enterprise AI Orchestrator Studio</h2>
               </div>
               <select
                 value={activeModel}
@@ -448,6 +433,134 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* KNOWLEDGE GRAPH TAB */}
+        {activeTab === "graph" && (
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 backdrop-blur-md shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <GitFork className="h-4 w-4 text-indigo-400" />
+                Knowledge Graph Adjacency Explorer
+              </h2>
+              <span className="text-xs font-mono text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                Automatic Node & Link Resolution
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-3 font-mono text-xs">
+                <p className="text-zinc-400 font-bold uppercase text-[10px]">Extracted Graph Entities (Nodes)</p>
+                <div className="space-y-2">
+                  <div className="p-2.5 bg-zinc-900 rounded border border-zinc-800 flex justify-between items-center">
+                    <span className="text-indigo-400 font-bold">doc_1</span>
+                    <span className="text-zinc-400 text-[10px]">Project Atlas Architecture Overview</span>
+                    <span className="text-emerald-400 text-[10px]">DOCUMENT</span>
+                  </div>
+                  <div className="p-2.5 bg-zinc-900 rounded border border-zinc-800 flex justify-between items-center">
+                    <span className="text-indigo-400 font-bold">usr_cto_office</span>
+                    <span className="text-zinc-400 text-[10px]">CTO Office</span>
+                    <span className="text-purple-400 text-[10px]">USER</span>
+                  </div>
+                  <div className="p-2.5 bg-zinc-900 rounded border border-zinc-800 flex justify-between items-center">
+                    <span className="text-indigo-400 font-bold">tech_pgvector</span>
+                    <span className="text-zinc-400 text-[10px]">pgvector</span>
+                    <span className="text-cyan-400 text-[10px]">TECHNOLOGY</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-3 font-mono text-xs">
+                <p className="text-zinc-400 font-bold uppercase text-[10px]">Relationships (Edges)</p>
+                <div className="space-y-2">
+                  <div className="p-2.5 bg-zinc-900 rounded border border-zinc-800 flex items-center justify-between text-[11px]">
+                    <span className="text-purple-400">usr_cto_office</span>
+                    <span className="text-zinc-500 font-bold">--- AUTHORED ---&gt;</span>
+                    <span className="text-indigo-400">doc_1</span>
+                  </div>
+                  <div className="p-2.5 bg-zinc-900 rounded border border-zinc-800 flex items-center justify-between text-[11px]">
+                    <span className="text-indigo-400">doc_1</span>
+                    <span className="text-zinc-500 font-bold">--- REFERENCES ---&gt;</span>
+                    <span className="text-cyan-400">tech_pgvector</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* GOVERNANCE & PII TAB */}
+        {activeTab === "governance" && (
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 backdrop-blur-md shadow-2xl space-y-4">
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <FileSearch className="h-4 w-4 text-indigo-400" />
+              Universal Data Governance & PII Scanner
+            </h2>
+
+            <div className="space-y-3">
+              {assets.map(asset => (
+                <div key={asset.id} className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 flex items-center justify-between font-mono text-xs">
+                  <div>
+                    <span className="font-bold text-white block mb-1">{asset.title}</span>
+                    <span className="text-[10px] text-zinc-500">{asset.entityType} • {asset.content.substring(0, 70)}...</span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className={`px-2.5 py-1 rounded text-[10px] font-bold border ${
+                      asset.metadata.classification === "RESTRICTED" ? "bg-red-500/10 text-red-400 border-red-500/20" :
+                      asset.metadata.classification === "CONFIDENTIAL" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                      "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                    }`}>
+                      {asset.metadata.classification || "INTERNAL"}
+                    </span>
+                    <span className="text-[10px] text-zinc-400 bg-zinc-900 px-2 py-1 rounded border border-zinc-800">
+                      Lineage Verified (18 steps)
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* POLICY SIMULATOR TAB */}
+        {activeTab === "policy" && (
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 backdrop-blur-md shadow-2xl space-y-4 max-w-xl mx-auto">
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <Lock className="h-4 w-4 text-indigo-400" />
+              ABAC Policy Engine Simulator
+            </h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-zinc-400 block mb-1">Simulated User Department</label>
+                <select
+                  value={simDept}
+                  onChange={e => setSimDept(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="Finance">Finance</option>
+                  <option value="Engineering">Engineering</option>
+                  <option value="Marketing">Marketing</option>
+                </select>
+              </div>
+
+              <button
+                onClick={handleSimulatePolicy}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 rounded-xl text-xs transition shadow-md shadow-indigo-600/20"
+              >
+                Run Policy Evaluation
+              </button>
+
+              {simResult && (
+                <div className={`p-4 rounded-xl text-xs font-mono border ${
+                  simResult.startsWith("PASSED") ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"
+                }`}>
+                  {simResult}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* CONNECTORS TAB */}
         {activeTab === "connectors" && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -479,61 +592,6 @@ export default function Dashboard() {
                 </div>
               );
             })}
-          </div>
-        )}
-
-        {/* INGEST TAB */}
-        {activeTab === "ingest" && (
-          <div className="max-w-2xl mx-auto bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 backdrop-blur-md shadow-2xl space-y-4">
-            <h2 className="text-sm font-bold text-white flex items-center gap-2">
-              <Plus className="h-4 w-4 text-indigo-400" />
-              Manual Document Ingestion
-            </h2>
-            <form onSubmit={handleIngest} className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-zinc-400 block mb-1">Document Title</label>
-                <input
-                  type="text"
-                  value={ingestTitle}
-                  onChange={e => setIngestTitle(e.target.value)}
-                  placeholder="e.g. Q3 AI Security Audit Report"
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-zinc-400 block mb-1">Entity Type</label>
-                <select
-                  value={ingestType}
-                  onChange={e => setIngestType(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="DOCUMENT">DOCUMENT</option>
-                  <option value="CONTRACT">CONTRACT</option>
-                  <option value="MEETING">MEETING</option>
-                  <option value="TICKET">TICKET</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-zinc-400 block mb-1">Document Body Content</label>
-                <textarea
-                  rows={5}
-                  value={ingestContent}
-                  onChange={e => setIngestContent(e.target.value)}
-                  placeholder="Paste document text here to trigger smart semantic chunking and embedding index generation..."
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={ingestStatus === "loading"}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-3 rounded-xl text-xs transition shadow-lg shadow-indigo-600/20"
-              >
-                {ingestStatus === "loading" ? "Processing Chunks & Embeddings..." : "Ingest & Index Document"}
-              </button>
-            </form>
           </div>
         )}
 
@@ -577,17 +635,17 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* OBSERVABILITY TAB */}
+        {/* TELEMETRY TAB */}
         {activeTab === "analytics" && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 space-y-2">
               <span className="text-[10px] uppercase tracking-wider font-semibold text-zinc-500">HTTP Requests (Total)</span>
-              <p className="text-2xl font-bold font-mono text-white">142,890</p>
-              <p className="text-[10px] text-emerald-400 font-mono">99.98% Success Rate</p>
+              <p className="text-2xl font-bold font-mono text-white">189,420</p>
+              <p className="text-[10px] text-emerald-400 font-mono">99.99% Success Rate</p>
             </div>
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 space-y-2">
               <span className="text-[10px] uppercase tracking-wider font-semibold text-zinc-500">Average RAG Latency</span>
-              <p className="text-2xl font-bold font-mono text-white">142ms</p>
+              <p className="text-2xl font-bold font-mono text-white">128ms</p>
               <p className="text-[10px] text-emerald-400 font-mono">pgvector HNSW Optimized</p>
             </div>
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 space-y-2">

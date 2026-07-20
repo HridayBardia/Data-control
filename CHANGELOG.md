@@ -1,47 +1,37 @@
 # Project Atlas Enterprise Transformation CHANGELOG
 
-## [2.0.0] - Enterprise AI Platform Release
+## [3.0.0] - Universal AI Data Control & Governance Release
 
-### 🚀 Architecture & Core Features
+### 🚀 Major Platform Architecture Upgrades
 
-#### 1. Real Embedding System (`backend/app/services/embeddings.py`)
-- Created `EmbeddingProvider` abstract interface.
-- Implemented providers: `OpenAIEmbeddingProvider`, `VoyageEmbeddingProvider`, `JinaEmbeddingProvider`, `NomicEmbeddingProvider`, `SentenceTransformerEmbeddingProvider`, `OllamaEmbeddingProvider`.
-- Added `ResilientEmbeddingService` featuring asynchronous batching, exponential backoff retries, provider fallback chain, Redis caching, and dimension adapter.
+#### 1. AI Orchestration Layer (`app/ai/`)
+- `providers.py`: Abstract interface and concrete LLM providers (`OpenAIProvider`, `AnthropicProvider`, `OllamaLocalProvider`).
+- `router.py`: Created `AIOrchestrator` with automatic provider routing, failover, streaming token handling, and cost optimization.
 
-#### 2. Enterprise Document Parsers (`backend/app/services/parsers.py`)
-- Implemented `EnterpriseDocumentParser` supporting PDF, DOCX, PPTX, TXT, CSV, XLSX, Markdown, HTML, JSON, and XML.
-- Added Tesseract OCR fallback for scanned PDFs and image-heavy documents.
-- Built `SmartSemanticChunker` with token-budgeted, sliding window hierarchical chunking and SHA-256 checksum deduplication.
+#### 2. Knowledge Graph Engine (`app/graph/`)
+- `engine.py`: Built `KnowledgeGraphEngine` to extract graph entities (`KnowledgeEntity`) and relationships (`KnowledgeRelationship`). Generates graph adjacency structures for Next.js visual traversal canvas.
 
-#### 3. Connector Framework & Engine (`backend/app/connectors/engine.py`)
-- Created production connectors for Google Drive, Slack, Jira, GitHub, and Confluence.
-- Implemented `ConnectorEngine` supporting OAuth2 token refresh, webhook payload handlers, incremental/delta sync, error queues, and connector health monitoring.
+#### 3. Universal Data Governance & PII Classifier (`app/governance/`)
+- `classifier.py`: Created `DataClassifier` for scanning SSN, Phone, Email, API Keys, Passwords, and Financial Data. Automatically assigns security levels (`PUBLIC`, `INTERNAL`, `CONFIDENTIAL`, `RESTRICTED`, `TOP_SECRET`).
+- `lineage.py`: Built `DataLineageTracker` enforcing 18-step data lifecycle provenance tracking.
 
-#### 4. Fine-Grained Security & Authorization Engine (`backend/app/core/authorization.py`)
-- Extended role hierarchy (`SUPER_ADMIN`, `ORG_ADMIN`, `MANAGER`, `DEVELOPER`, `MEMBER`, `VIEWER`, `GUEST`).
-- Built `PermissionEvaluator` combining RBAC role inheritance with ABAC dynamic condition policies (department, project, resource classification, time windows).
-- Enforced multi-tenant isolation and zero trust context validation on all requests.
+#### 4. Policy Engine & Simulator (`app/policy/`)
+- `engine.py`: Built `EnterprisePolicyEngine` supporting dry-run evaluation of dynamic ABAC policies (department rules, IP ranges, time windows, classification locks).
 
-#### 5. Hybrid Search & RAG Pipeline (`backend/app/services/search.py` & `backend/app/services/rag.py`)
-- Built `HybridSearchEngine` combining Postgres BM25 keyword matching with pgvector Cosine similarity using Reciprocal Rank Fusion (RRF).
-- Implemented complete RAG Pipeline: Intent Detection -> ABAC Permission Filtering -> Hybrid Retrieval -> Reranking -> Context Compression -> Multi-LLM Prompt Synthesis -> Inline Citations -> SSE Stream Generator.
+#### 5. Enterprise Next.js UI Expansion (`frontend/src/app/page.tsx`)
+- Enhanced workspace with Knowledge Graph Explorer canvas, Data Governance & PII scanner view, Policy Engine Simulator, and AI Orchestrator Studio.
 
-#### 6. Secrets, Rate Limiting & Caching (`backend/app/core/`)
-- `secrets.py`: Implemented `SecretVault` featuring AES-256-GCM Envelope Encryption for OAuth tokens and API keys.
-- `rate_limiter.py`: Built `RedisSlidingWindowRateLimiter` per user/org/API route with HTTP 429 & `Retry-After` headers.
-- `cache.py`: Built `RedisCacheManager` with TTL management and semantic invalidation.
-
-#### 7. Background Workers & Observability (`backend/app/worker/` & `backend/app/core/telemetry.py`)
-- Configured Celery worker application with task queues for document ingestion, connector sync, and dead letter queue retries.
-- Added Prometheus metrics exporter (`/metrics`) and health probes (`/health/live`, `/health/ready`).
-
-#### 8. Enterprise Frontend Console (`frontend/src/app/page.tsx`)
-- Updated Next.js frontend with Multi-tenant workspace navigation, AI RAG streaming chat console with interactive inline citations, Hybrid Search BM25/Vector weight sliders, Connector status dashboard, manual document ingestion, and tamper-proof cryptographic audit ledger.
+#### 6. DevOps & Infrastructure (`terraform/` & `helm/`)
+- Added `terraform/main.tf` EKS cluster definitions and `helm/atlas/Chart.yaml` deployment manifests.
 
 ---
 
-### 🛡️ Security Audit & Verification
-- All 8 backend pytest test cases passing cleanly.
-- Frontend ESLint & TypeScript check verified with 0 errors and 0 warnings.
-- Pushed changes to GitHub repository `HridayBardia/Data-control`.
+## [2.0.0] - Enterprise AI Platform Release
+
+- Real Embedding System with multi-provider abstraction (`OpenAI`, `Voyage`, `Jina`, `Nomic`, `BGE`, `Ollama`).
+- Multi-format enterprise document parsers with Tesseract OCR fallback.
+- Connector engine for Google Drive, Slack, Jira, GitHub, and Confluence.
+- Fine-grained RBAC + ABAC policy evaluator.
+- Hybrid Search (BM25 + pgvector Cosine similarity with RRF).
+- Full RAG Pipeline with inline citations and SSE streaming responses.
+- AES-256-GCM Envelope Encryption and Redis sliding window rate limiter.
