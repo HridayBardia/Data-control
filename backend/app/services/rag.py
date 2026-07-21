@@ -4,6 +4,7 @@ from typing import List, Dict, Any, AsyncGenerator, Optional
 from sqlalchemy.orm import Session
 from app.services.search import HybridSearchEngine
 from app.core.authorization import AuthContext, PermissionEvaluator
+from app.ai.router import ai_orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class RAGPipeline:
 
         context_str = "\n\n".join([f"[{c['id']}] {text}" for c, text in zip(citations, permitted_chunks)]) if permitted_chunks else "No relevant context found."
 
-        # 4. Prompt Construction & Answer Synthesis
+        # 4. Prompt Construction & Answer Synthesis via AI Orchestrator
         system_prompt = (
             "You are Atlas AI, an enterprise intelligence assistant. "
             "Answer the user query strictly based on the provided context below. "
@@ -63,16 +64,22 @@ class RAGPipeline:
             f"Context:\n{context_str}"
         )
 
-        # 5. Synthesize Model Answer
         if permitted_chunks:
-            answer = (
-                f"Based on your enterprise knowledge repository, {permitted_chunks[0][:120]}... "
-                f"Security policies and audit logs verify data compliance [1]."
+            orchestration_result = await ai_orchestrator.execute_query(
+                prompt=query,
+                system_prompt=system_prompt,
+                preferred_provider=provider
             )
+            raw_answer = orchestration_result["response"]
+            answer = f"{raw_answer} [1]"
             confidence = 0.94
+            used_provider = orchestration_result["provider"]
+            tokens_used = orchestration_result["tokens_used"]
         else:
             answer = "I could not find any accessible knowledge documents matching your query under your current access permissions."
             confidence = 0.20
+            used_provider = f"{provider}/{model}"
+            tokens_used = len(query.split()) + 20
 
         return {
             "query": query,
@@ -80,8 +87,8 @@ class RAGPipeline:
             "answer": answer,
             "citations": citations,
             "confidence": confidence,
-            "model_used": f"{provider}/{model}",
-            "tokens_used": len(query.split()) + len(answer.split()) + 150
+            "model_used": used_provider,
+            "tokens_used": tokens_used
         }
 
     async def stream_response(

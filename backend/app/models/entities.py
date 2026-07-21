@@ -183,3 +183,90 @@ class AuditLog(Base):
 
     # Relationships
     organization = relationship("Organization", back_populates="audit_logs")
+
+
+class PolicyRuleModel(Base):
+    __tablename__ = "policy_rules"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    condition_type = Column(String(100), nullable=False)  # DEPARTMENT_MATCH, TIME_WINDOW, CLASSIFICATION_DENY, GEO_IP
+    config_json = Column(JSON, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DataClassificationModel(Base):
+    __tablename__ = "data_classifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    node_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_nodes.id", ondelete="CASCADE"), nullable=False)
+    classification_level = Column(String(50), nullable=False)  # PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED, TOP_SECRET
+    has_pii = Column(Boolean, default=False, nullable=False)
+    findings_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DataLineageModel(Base):
+    __tablename__ = "data_lineage_records"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    document_id = Column(String(255), nullable=False, index=True)
+    connector_type = Column(String(100), nullable=False)
+    classification = Column(String(50), nullable=False)
+    provenance_chain_json = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class SavedSearchModel(Base):
+    __tablename__ = "saved_searches"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    query = Column(Text, nullable=False)
+    filters_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class PromptTemplateModel(Base):
+    __tablename__ = "prompt_templates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(255), nullable=False)
+    template_text = Column(Text, nullable=False)
+    category = Column(String(100), default="GENERAL", nullable=False)
+    version = Column(Integer, default=1, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ConversationModel(Base):
+    __tablename__ = "conversations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(255), nullable=False)
+    folder_name = Column(String(100), default="General", nullable=False)
+    is_pinned = Column(Boolean, default=False, nullable=False)
+    model_name = Column(String(100), default="gpt-4o", nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ChatMessageModel(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    sender = Column(String(20), nullable=False)  # user, assistant, system
+    content = Column(Text, nullable=False)
+    citations_json = Column(JSON, nullable=True)
+    confidence_score = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
